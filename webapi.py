@@ -1,25 +1,58 @@
+import time
 import requests
-import matplotlib.pyplot as plt
-import urllib3
+from crewai.tools import BaseTool
+from typing import Type
+from pydantic import BaseModel, Field
 
-# Disable SSL warning
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-url = "https://api.open-meteo.com/v1/forecast?latitude=19.0760&longitude=72.8777&current_weather=true"
+class GithubFileCheckerInput(BaseModel):
+    repo_owner: str = Field(..., description="Owner of the GitHub repository")
+    repo_name: str = Field(..., description="Name of the repository")
+    file_path: str = Field(..., description="Path of the file inside the repo")
+    branch: str = Field(default="main", description="Branch to check")
+    github_token: str = Field(..., description="GitHub personal access token")
 
-response = requests.get(url, verify=False)  # <-- Add verify=False
-data = response.json()
 
-current = data["current_weather"]
+class GithubFileCheckerTool(BaseTool):
+    name: str = "GitHub File Checker"
+    description: str = (
+        "Waits for 30 minutes and then checks whether a file exists in a GitHub repository."
+    )
+    args_schema: Type[BaseModel] = GithubFileCheckerInput
 
-labels = ["Temperature (°C)", "Wind Speed (km/h)", "Wind Direction (°)"]
-values = [
-    current["temperature"],
-    current["windspeed"],
-    current["winddirection"]
-]
+    def _run(
+        self,
+        repo_owner: str,
+        repo_name: str,
+        file_path: str,
+        branch: str,
+        github_token: str,
+    ) -> str:
 
-plt.figure()
-plt.bar(labels, values)
-plt.title("Mumbai Current Weather")
-plt.show()
+        # Wait 30 minutes
+        print("Waiting for 30 minutes before checking GitHub...")
+        time.sleep(1800)
+
+        url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
+
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {github_token}",
+        }
+
+        params = {"ref": branch}
+
+        try:
+            response = requests.get(url, headers=headers, params=params)
+
+            if response.status_code == 200:
+                return "File exists in the GitHub repository."
+
+            elif response.status_code == 404:
+                return "File does NOT exist in the GitHub repository."
+
+            else:
+                return f"Unexpected response: {response.status_code} - {response.text}"
+
+        except Exception as e:
+            return f"Error checking file: {str(e)}"
